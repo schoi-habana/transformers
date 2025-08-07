@@ -2018,6 +2018,32 @@ def export(*, backends=()):
 
     return inner_fn
 
+def requires(*, backends=()):
+    """
+    This decorator enables two things:
+    - Attaching a `__backends` tuple to an object to see what are the necessary backends for it
+      to execute correctly without instantiating it
+    - The '@requires' string is used to dynamically import objects
+    """
+
+    if not isinstance(backends, tuple):
+        raise TypeError("Backends should be a tuple.")
+
+    applied_backends = []
+    for backend in backends:
+        if backend in BACKENDS_MAPPING:
+            applied_backends.append(backend)
+        else:
+            if any(key in backend for key in ["=", "<", ">"]):
+                applied_backends.append(Backend(backend))
+            else:
+                raise ValueError(f"Backend should be defined in the BACKENDS_MAPPING. Offending backend: {backend}")
+
+    def inner_fn(fun):
+        fun.__backends = applied_backends
+        return fun
+
+    return inner_fn
 
 BASE_FILE_REQUIREMENTS = {
     lambda e: "modeling_tf_" in e: ("tf",),

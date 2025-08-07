@@ -244,6 +244,7 @@ else:
             ("gpt_neo", ("GPT2Tokenizer", "GPT2TokenizerFast" if is_tokenizers_available() else None)),
             ("gpt_neox", (None, "GPTNeoXTokenizerFast" if is_tokenizers_available() else None)),
             ("gpt_neox_japanese", ("GPTNeoXJapaneseTokenizer", None)),
+            ("gpt_oss", (None, "PreTrainedTokenizerFast" if is_tokenizers_available() else None)),
             ("gptj", ("GPT2Tokenizer", "GPT2TokenizerFast" if is_tokenizers_available() else None)),
             ("gptsan-japanese", ("GPTSanJapaneseTokenizer", None)),
             ("grounding-dino", ("BertTokenizer", "BertTokenizerFast" if is_tokenizers_available() else None)),

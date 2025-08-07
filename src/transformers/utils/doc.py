@@ -20,6 +20,7 @@ import inspect
 import re
 import textwrap
 import types
+from collections import OrderedDict
 
 
 def get_docstring_indentation_level(func):
@@ -633,6 +634,27 @@ PT_SAMPLE_DOCSTRINGS = {
     "VisionBaseModel": PT_VISION_BASE_MODEL_SAMPLE,
     "ImageClassification": PT_VISION_SEQ_CLASS_SAMPLE,
 }
+
+
+TEXT_GENERATION_SAMPLE = r"""
+    Example:
+
+    ```python
+    ```
+"""
+
+PIPELINE_TASKS_TO_SAMPLE_DOCSTRINGS = OrderedDict(
+    [
+        ("text-generation", TEXT_GENERATION_SAMPLE),
+    ]
+)
+
+MODELS_TO_PIPELINE = OrderedDict(
+    [
+        # Text/tokens
+        ("MODEL_FOR_CAUSAL_LM_MAPPING_NAMES", "text-generation"),
+    ]
+)
 
 
 TF_TOKEN_CLASSIFICATION_SAMPLE = r"""
