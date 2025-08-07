@@ -50,11 +50,11 @@ class GptOssConfig(PretrainedConfig):
         "layers.*.self_attn.o_proj": "rowwise",
         "layers.*.self_attn.sinks": "local_rowwise",
         "layers.*.mlp.experts": "gather",
-        #"layers.*.mlp.router": "ep_router",
-        #"layers.*.mlp.experts.gate_up_proj": "grouped_gemm",
-        #"layers.*.mlp.experts.gate_up_proj_bias": "grouped_gemm",
-        #"layers.*.mlp.experts.down_proj": "grouped_gemm",
-        #"layers.*.mlp.experts.down_proj_bias": "grouped_gemm",
+        "layers.*.mlp.router": "ep_router",
+        "layers.*.mlp.experts.gate_up_proj": "grouped_gemm",
+        "layers.*.mlp.experts.gate_up_proj_bias": "grouped_gemm",
+        "layers.*.mlp.experts.down_proj": "grouped_gemm",
+        "layers.*.mlp.experts.down_proj_bias": "grouped_gemm",
     }
 
     def __init__(

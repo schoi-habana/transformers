@@ -530,6 +530,105 @@ class SequenceParallel(TensorParallelLayer):
         return nn.Parameter(parameter)
 
 
+class GroupedGemmParallel(TensorParallelLayer):
+    """
+    Applies Expert Parallelism to MoE experts by loading the correct experts on each device.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.use_dtensor = False
+
+    def partition_tensor(self, param, empty_param, param_type, param_casting_dtype, to_contiguous, rank, device_mesh):
+        ep_rank = rank
+        global_num_experts = empty_param.shape[0]
+        if global_num_experts % device_mesh.size() != 0:
+            raise ValueError(
+                f"Global number of experts must be divisible by number of devices: {global_num_experts} % {device_mesh.size()} != 0"
+            )
+        local_num_experts = global_num_experts // device_mesh.size()
+        param = param[ep_rank * local_num_experts : (ep_rank + 1) * local_num_experts].to(param_casting_dtype)
+        if to_contiguous:
+            param = param.contiguous()
+        return param
+
+
+class RouterParallel(TensorParallelLayer):
+    """
+    Allows to reshape the router scores to support running expert parallel.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        self.use_dtensor = False
+
+    @staticmethod
+    def _prepare_input_fn(input_layouts, desired_input_layouts, mod, inputs, device_mesh):
+        input_tensor = inputs[0]
+        if isinstance(input_tensor, DTensor):
+            raise NotImplementedError("RouterParallel does not support DTensor input for now")
+        return input_tensor
+
+    @staticmethod
+    def _prepare_output_fn(output_layouts, use_local_output, mod, outputs, device_mesh):
+        """
+        Imagine if you had 4 tokens, top_k = 4, and 128experts.
+        With EP = 8.
+        Imagine router_indices being:
+        [ 52,  42, 119,  67],
+        [102,  89,  61,  40],
+        [ 82, 103,   4,  34],
+        [ 93,  23, 109,  11],
+
+        then you can map which rank should be getting which values
+
+        [3, 2, 7, 4],
+        [6, 5, 3, 2],
+        [5, 6, 0, 2],
+        [5, 1, 6, 0],
+
+        Thus for say rank 0, you fill with 0 the index tensor
+
+        [ 0, 0, 0, 0],
+        [ 0, 0, 0, 0],
+        [ 0, 0, 4, 0],
+        [ 0, 0, 0, 11],
+
+        This works well. For another rank you need to make sure you round to num_local_expert
+        because the next operation will one hot encode the router index vector.
+
+        This allows us to know directly which local expert is hit.
+        Similarly the scores are indexed with something created form
+        router_indices.
+
+        The kinda naive training loop that we use for device_map "auto" uses a similar logic.
+        Here we are just making each rank believe that he is alone, and he computes his part of the hiddenstates.
+        """
+        ep_rank, ep_size = device_mesh.get_local_rank(), device_mesh.size()
+        num_local_experts = mod.num_experts // ep_size
+        router_scores, router_indices = outputs
+        router_scores = router_scores[:, ep_rank * num_local_experts : (ep_rank + 1) * num_local_experts]
+        router_indices = router_indices.masked_fill((router_indices // num_local_experts) != ep_rank, 0)
+        router_indices = router_indices % num_local_experts
+        return router_scores, router_indices
+
+    def partition_tensor(self, param, empty_param, param_type, param_casting_dtype, to_contiguous, rank, device_mesh):
+        # TODO: i'd like for this to be the default
+        param = param[...].to(param_casting_dtype)
+        if to_contiguous:
+            param = param.contiguous()
+        return param
+
+    def prepare_module_tp(self, module: nn.Module, device_mesh) -> nn.Module:
+        # TODO: need an abstract Parallel class that is different from TensorParallelLayer
+        distribute_module(
+            module,
+            device_mesh,
+            partial(self._prepare_input_fn, None, None),
+            partial(self._prepare_output_fn, None, None),
+        )
+
 SUPPORTED_TP_STYLES = {
     "colwise",
     "rowwise",
@@ -541,6 +640,8 @@ SUPPORTED_TP_STYLES = {
     "gather",
     "local_packed_rowwise",
     "sequence_parallel",
+    "ep_router",
+    "grouped_gemm",
 }
 
 
@@ -574,6 +675,10 @@ def translate_to_torch_parallel_style(style: str):
         return PackedRowwiseParallel(use_dtensor=False)
     elif style == "sequence_parallel":
         return SequenceParallel()
+    elif style == "ep_router":
+        return RouterParallel()
+    elif style == "grouped_gemm":
+        return GroupedGemmParallel()
     else:
         raise ValueError(f"Unsupported parallel style value: {style}")
 
